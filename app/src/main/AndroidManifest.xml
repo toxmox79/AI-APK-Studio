@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
+    <application
+        android:name=".AIAPKApplication"
+        android:allowBackup="true"
+        android:icon="@drawable/ic_aiapk"
+        android:label="AI APK Studio"
+        android:roundIcon="@drawable/ic_aiapk"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AIAPKStudio">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service
+            android:name=".build.TermuxResultService"
+            android:exported="false" />
+    </application>
+</manifest>
