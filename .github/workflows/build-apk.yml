@@ -1,4 +1,4 @@
-name: Repair & Build AI APK Studio
+name: Fix Kotlin & Build AI APK Studio
 
 on:
   workflow_dispatch:
@@ -9,90 +9,48 @@ permissions:
   contents: write
 
 jobs:
-  repair-and-build:
+  fix-and-build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout full repository history
+      - name: Checkout repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Restore source package accidentally ignored by Git
+      - name: Fix MainViewModel Kotlin errors
         shell: bash
         run: |
           set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
 
-          # The first bootstrap commit still contains the complete source archive.
-          ORIGINAL_BOOTSTRAP_COMMIT="d5886c8d430f5f43f67abde2cb9d3cc4094ebee4"
+          path = Path("app/src/main/java/de/aiapk/studio/MainViewModel.kt")
+          text = path.read_text(encoding="utf-8")
 
-          git show "${ORIGINAL_BOOTSTRAP_COMMIT}:.github/workflows/build-apk.yml" \
-            > /tmp/original-bootstrap.yml
+          old_loop = "        repeat(passes) { index ->"
+          new_loop = "        for (index in 0 until passes) {"
+          if old_loop in text:
+              text = text.replace(old_loop, new_loop, 1)
 
-          awk '
-            /cat > \/tmp\/aiapk-source\.b64/ { capture=1; next }
-            capture && /^[[:space:]]*AIAPK_ARCHIVE[[:space:]]*$/ { exit }
-            capture {
-              sub(/^[[:space:]]+/, "")
-              print
+          old_source = '            val source = likely.joinToString("\\n\\n") { path -> "--- $path ---\\n${projectStore.readFile(project.path, path).take(20_000)}" }.take(60_000)'
+          new_source = '''            val sourceParts = mutableListOf<String>()
+            for (path in likely) {
+                sourceParts += "--- $path ---\\n${projectStore.readFile(project.path, path).take(20_000)}"
             }
-          ' /tmp/original-bootstrap.yml > /tmp/aiapk-source.b64
+            val source = sourceParts.joinToString("\\n\\n").take(60_000)'''
+          if old_source in text:
+              text = text.replace(old_source, new_source, 1)
 
-          test -s /tmp/aiapk-source.b64
-
-          base64 --decode /tmp/aiapk-source.b64 > /tmp/aiapk-source.tar.gz
-          mkdir -p /tmp/aiapk-recovered
-          tar -xzf /tmp/aiapk-source.tar.gz -C /tmp/aiapk-recovered
-
-          SOURCE_DIR="/tmp/aiapk-recovered/app/src/main/java/de/aiapk/studio/build"
-          TARGET_DIR="app/src/main/java/de/aiapk/studio/build"
-
-          test -d "$SOURCE_DIR"
-          mkdir -p "$TARGET_DIR"
-          cp -a "$SOURCE_DIR"/. "$TARGET_DIR"/
-
-          echo "Recovered build package:"
-          find "$TARGET_DIR" -maxdepth 1 -type f -print | sort
-
-      - name: Fix .gitignore and Material3 opt-in
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cat > .gitignore <<'EOF'
-          .gradle/
-          .idea/
-          local.properties
-          /build/
-          /app/build/
-          *.iml
-          .DS_Store
-          EOF
-
-          SCREEN="app/src/main/java/de/aiapk/studio/ui/AppScreens.kt"
-          if ! grep -q '@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$SCREEN"; then
-            TMP="$(mktemp)"
-            printf '%s\n\n' '@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' > "$TMP"
-            cat "$SCREEN" >> "$TMP"
-            mv "$TMP" "$SCREEN"
-          fi
-
-      - name: Commit restored sources
-        shell: bash
-        run: |
-          set -euo pipefail
+          path.write_text(text, encoding="utf-8")
+          PY
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add .gitignore app/src/main/java/de/aiapk/studio/ui/AppScreens.kt
-          git add -f app/src/main/java/de/aiapk/studio/build
-
+          git add app/src/main/java/de/aiapk/studio/MainViewModel.kt
           if ! git diff --cached --quiet; then
-            git commit -m "Restore missing Android build package"
+            git commit -m "Fix coroutine repair loop compilation"
             git push
-          else
-            echo "Repair already applied; nothing to commit."
           fi
 
       - name: Set up JDK 17
