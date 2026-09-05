@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
 package de.aiapk.studio.ui
 
 import android.content.Intent
