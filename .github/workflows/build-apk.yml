@@ -1,4 +1,4 @@
-name: Build AI APK Studio
+name: Repair & Build AI APK Studio
 
 on:
   workflow_dispatch:
@@ -6,15 +6,94 @@ on:
     branches: [ main ]
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build:
+  repair-and-build:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout full repository history
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Restore source package accidentally ignored by Git
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # The first bootstrap commit still contains the complete source archive.
+          ORIGINAL_BOOTSTRAP_COMMIT="d5886c8d430f5f43f67abde2cb9d3cc4094ebee4"
+
+          git show "${ORIGINAL_BOOTSTRAP_COMMIT}:.github/workflows/build-apk.yml" \
+            > /tmp/original-bootstrap.yml
+
+          awk '
+            /cat > \/tmp\/aiapk-source\.b64/ { capture=1; next }
+            capture && /^[[:space:]]*AIAPK_ARCHIVE[[:space:]]*$/ { exit }
+            capture {
+              sub(/^[[:space:]]+/, "")
+              print
+            }
+          ' /tmp/original-bootstrap.yml > /tmp/aiapk-source.b64
+
+          test -s /tmp/aiapk-source.b64
+
+          base64 --decode /tmp/aiapk-source.b64 > /tmp/aiapk-source.tar.gz
+          mkdir -p /tmp/aiapk-recovered
+          tar -xzf /tmp/aiapk-source.tar.gz -C /tmp/aiapk-recovered
+
+          SOURCE_DIR="/tmp/aiapk-recovered/app/src/main/java/de/aiapk/studio/build"
+          TARGET_DIR="app/src/main/java/de/aiapk/studio/build"
+
+          test -d "$SOURCE_DIR"
+          mkdir -p "$TARGET_DIR"
+          cp -a "$SOURCE_DIR"/. "$TARGET_DIR"/
+
+          echo "Recovered build package:"
+          find "$TARGET_DIR" -maxdepth 1 -type f -print | sort
+
+      - name: Fix .gitignore and Material3 opt-in
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > .gitignore <<'EOF'
+          .gradle/
+          .idea/
+          local.properties
+          /build/
+          /app/build/
+          *.iml
+          .DS_Store
+          EOF
+
+          SCREEN="app/src/main/java/de/aiapk/studio/ui/AppScreens.kt"
+          if ! grep -q '@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' "$SCREEN"; then
+            TMP="$(mktemp)"
+            printf '%s\n\n' '@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)' > "$TMP"
+            cat "$SCREEN" >> "$TMP"
+            mv "$TMP" "$SCREEN"
+          fi
+
+      - name: Commit restored sources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add .gitignore app/src/main/java/de/aiapk/studio/ui/AppScreens.kt
+          git add -f app/src/main/java/de/aiapk/studio/build
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Restore missing Android build package"
+            git push
+          else
+            echo "Repair already applied; nothing to commit."
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
