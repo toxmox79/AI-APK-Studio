@@ -202,12 +202,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val passes = repo.settings.settings.first().repairPasses.coerceIn(1, 8)
-        repeat(passes) { index ->
+        for (index in 0 until passes) {
             val pass = index + 1
             repo.dao.updateProjectStatus(project.id, "Fehlerreparatur $pass/$passes")
             val fileList = projectStore.listFiles(project.path)
             val likely = filesMentionedInLog(fileList, result.output).take(6)
-            val source = likely.joinToString("\n\n") { path -> "--- $path ---\n${projectStore.readFile(project.path, path).take(20_000)}" }.take(60_000)
+            val sourceParts = mutableListOf<String>()
+  for (path in likely) {
+      sourceParts += "--- $path ---\n${projectStore.readFile(project.path, path).take(20_000)}"
+  }
+  val source = sourceParts.joinToString("\n\n").take(60_000)
             val repairPrompt = """
                 Der Android-Build ist fehlgeschlagen. Repariere ausschließlich die tatsächlichen Buildfehler und erhalte bestehende Funktionen.
 
